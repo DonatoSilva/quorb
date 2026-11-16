@@ -401,7 +401,6 @@ describe('stale data is never presented as the current state (T31)', () => {
   });
 });
 
-
 // T31b (S33 caso 2, C-6): el backend declara el régimen de facturación en el informe y
 // el frente sólo compara si cambió. Un aviso de «suscripción inactiva» en una cuenta
 // que cambió de régimen NO es un fallo de lectura: los topes del régimen anterior ya no
@@ -526,3 +525,45 @@ describe('the kept spend is never presented as the current state (F1)', () => {
   });
 });
 
+// F3: el resumen que se copia no afirma el estado viejo como vigente.
+describe('the copied summary never claims the old state is current (F3)', () => {
+  const now = new Date('2026-11-13T08:00:00Z');
+
+  it('marks the stale meters with the cached chip and their reading date', () => {
+    const report: UsageReport = {
+      ...base,
+      meters: [
+        { id: 'rate_requests', label: 'Peticiones (ventana)', percent: 20, used: null, limit: null, unit: null, resetsAt: null, windowSeconds: null },
+        { id: 'model:deepseek-v4-flash', label: 'deepseek-v4-flash', percent: 95, used: null, limit: null, unit: null, resetsAt: null, windowSeconds: null, stale: true, readAt: '2026-11-12T08:00:00Z' },
+      ],
+    };
+    const lines = reportSummary(report, now, 'es').split('\n');
+    const fresh = lines.find((l) => l.includes('Peticiones'))!;
+    const old = lines.find((l) => l.includes('deepseek-v4-flash'))!;
+    // El medidor viejo va marcado, con la fecha de su última lectura.
+    expect(old).toContain('caché');
+    expect(old).toContain('12 nov');
+    // El vigente, no.
+    expect(fresh).not.toContain('caché');
+  });
+
+  it('marks the meters of a whole kept report as cached', () => {
+    // Informe entero conservado: sus medidores son viejos aunque no lleven la marca.
+    const report: UsageReport = { ...base, stale: true, fetchedAt: '2026-11-12T08:00:00Z' };
+    const summary = reportSummary(report, now, 'es');
+    expect(summary).toContain('caché');
+    expect(summary).toContain('12 nov');
+  });
+
+  it('marks the kept spend as cached', () => {
+    const report: UsageReport = {
+      ...base,
+      stale: true,
+      fetchedAt: '2026-11-12T08:00:00Z',
+      spend: { amount: 12, currency: 'USD', periodLabel: 'Diciembre', budget: 100 },
+    };
+    const line = reportSummary(report, now, 'es').split('\n').find((l) => l.includes('Diciembre'))!;
+    expect(line).toContain('caché');
+    expect(line).toContain('12 nov');
+  });
+});

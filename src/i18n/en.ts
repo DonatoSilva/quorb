@@ -628,6 +628,7 @@ export const en = {
     },
     staleChip: 'cached',
     staleChipTitle: 'Data from the last good cycle',
+    staleReadAt: 'last read {date}',
     budget: 'Budget',
     copy: {
       summary: 'Copy summary',

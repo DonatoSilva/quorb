@@ -121,6 +121,20 @@ export function peakMeter(r: UsageReport): Meter | null {
   return best;
 }
 
+/** Fecha corta y legible de una lectura: «12 nov» / «Nov 12». */
+export function formatShortDate(iso: string | null, locale: Locale = 'es'): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  // La marca de tiempo del informe es un instante UTC: se muestra en UTC para que
+  // el texto no dependa de la zona horaria de quien mira.
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'es-ES', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  }).format(d);
+}
+
 /**
  * ¿El régimen que declara el informe nuevo impide conservar los medidores del anterior?
  *
@@ -224,6 +238,17 @@ export function trayTooltip(reports: UsageReport[]): string {
   return (parts.join('\n') || 'Quorb').slice(0, 127);
 }
 
+/**
+ * La marca de lo viejo en texto plano: «caché · última lectura 12 nov». Se usa en el
+ * resumen que se copia, para que lo pegado en otro lado no afirme el estado viejo
+ * como vigente.
+ */
+function staleMark(readAt: string | null, locale: Locale): string {
+  const chip = t(locale, 'details.staleChip');
+  const date = formatShortDate(readAt, locale);
+  return date ? `${chip} · ${t(locale, 'details.staleReadAt', { date })}` : chip;
+}
+
 /** Resumen en texto plano para copiar al portapapeles. */
 export function reportSummary(r: UsageReport, now: Date = new Date(), locale: Locale = 'es'): string {
   const lines = [r.plan ? `${r.name} (${r.plan})` : r.name];
@@ -235,9 +260,17 @@ export function reportSummary(r: UsageReport, now: Date = new Date(), locale: Lo
         : m.used != null
           ? `${formatCompact(m.used)}${m.unit ? ` ${m.unit}` : ''}`
           : '—';
-    lines.push(`· ${m.label}: ${value}${reset ? ` (${t(locale, 'details.summaryReset', { when: reset })})` : ''}`);
+    // Lo viejo va marcado: el resumen no afirma el estado viejo como el de ahora.
+    const notes = [
+      reset ? t(locale, 'details.summaryReset', { when: reset }) : null,
+      isStaleMeter(r, m) ? staleMark(m.readAt ?? r.fetchedAt, locale) : null,
+    ].filter(Boolean);
+    lines.push(`· ${m.label}: ${value}${notes.length ? ` (${notes.join(' · ')})` : ''}`);
   }
-  if (r.spend) lines.push(`· ${r.spend.periodLabel}: ${formatMoney(r.spend.amount, r.spend.currency)}`);
+  if (r.spend) {
+    const mark = isStaleSpend(r) ? staleMark(r.fetchedAt, locale) : null;
+    lines.push(`· ${r.spend.periodLabel}: ${formatMoney(r.spend.amount, r.spend.currency)}${mark ? ` (${mark})` : ''}`);
+  }
   if (r.message && r.status !== 'ok') lines.push(`· ${r.message}`);
   return lines.join('\n');
 }
